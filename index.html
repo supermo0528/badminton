@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>羽球排點</title>
+<style>
+:root{--bg:#f3f6ef;--surf:#fff;--ink:#1d2a1f;--mute:#6b7a6d;--line:#d9e1d3;--acc:#2f7d4f;--accink:#fff;--a:#2f6fb5;--b:#c2562f;--court:#e8f0e2;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141b16;--surf:#1d2720;--ink:#e8f0e6;--mute:#93a496;--line:#2c3a2f;--acc:#5fbf86;--accink:#0e1a12;--a:#6fa8e6;--b:#e8855d;--court:#243029;color-scheme:dark}}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;line-height:1.6}
+main{max-width:720px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:28px;margin:8px 0 4px;letter-spacing:.04em}
+.sub{color:var(--mute);margin:0 0 20px;font-size:14px}
+section{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+h2{font-size:16px;margin:0 0 12px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input[type=text]{flex:1;min-width:140px;padding:10px 12px;font-size:16px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)}
+button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid var(--line);background:var(--surf);color:var(--ink);padding:9px 14px}
+button.p{background:var(--acc);color:var(--accink);border-color:var(--acc);font-weight:600}
+button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.chip{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:4px 6px 4px 12px;background:var(--bg)}
+.chip.off{opacity:.45;text-decoration:line-through}
+.chip button{padding:0 8px;border:0;background:none;color:var(--mute);font-size:13px}
+.empty{color:var(--mute);font-size:14px;margin:12px 0 0}
+.stepper{display:flex;align-items:center;gap:10px}
+.stepper button{width:36px;height:36px;padding:0;font-size:20px}
+.court{background:var(--court);border:2px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+.court h3{margin:0 0 8px;font-size:14px;color:var(--mute)}
+.match{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;text-align:center}
+.team{font-weight:700;font-size:18px;line-height:1.4}
+.team.a{color:var(--a)}.team.b{color:var(--b)}
+.vs{color:var(--mute);font-size:13px}
+.rest{color:var(--mute);font-size:14px}
+.rest b{color:var(--ink)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td,th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
+th{color:var(--mute);font-weight:500}
+td:not(:first-child),th:not(:first-child){text-align:center}
+.hist{font-size:13px;color:var(--mute);border-bottom:1px solid var(--line);padding:6px 0}
+.wrap{overflow-x:auto}
+</style>
+</head>
+<body>
+<main>
+<h1>🏸 羽球排點</h1>
+<p class="sub">輸入大家的名字，按「下一輪」自動排場。上場次數少的先上，盡量換搭檔、換對手。</p>
+
+<section>
+<h2>參加的人（<span id="cnt">0</span>）</h2>
+<div class="row">
+<input type="text" id="name" placeholder="輸入名字後按 Enter，可用逗號一次加多人" maxlength="20" autocomplete="off">
+<button class="p" id="add">加入</button>
+</div>
+<div class="chips" id="chips"></div>
+<p class="empty" id="hint"></p>
+</section>
+
+<section>
+<h2>場地數</h2>
+<div class="stepper"><button id="minus" aria-label="減少場地">−</button><b id="courts">2</b><button id="plus" aria-label="增加場地">+</button><span class="sub" style="margin:0" id="courtNote"></span></div>
+</section>
+
+<section>
+<div class="row" style="justify-content:space-between;margin-bottom:12px">
+<h2 style="margin:0" id="roundTitle">尚未開始</h2>
+<div class="row"><button class="p" id="next">下一輪</button><button id="reset">重新開始</button></div>
+</div>
+<div id="current"></div>
+</section>
+
+<section>
+<h2>上場統計</h2>
+<div class="wrap"><table id="stats"></table></div>
+<div id="history" style="margin-top:12px"></div>
+</section>
+</main>
+
+<script>
+var S={players:[],courts:2,round:0,history:[]};
+var G={};      // games played
+var LAST={};   // last round played
+var PART={};   // partner counts
+var OPP={};    // opponent counts
+var $=function(id){return document.getElementById(id)};
+function key(a,b){return a<b?a+'|'+b:b+'|'+a}
+function save(){try{localStorage.setItem('badminton-names',JSON.stringify({p:S.players,c:S.courts}))}catch(e){}}
+function load(){try{var d=JSON.parse(localStorage.getItem('badminton-names')||'null');if(d){S.players=d.p||[];S.courts=d.c||2}}catch(e){}}
+function active(){return S.players.filter(function(p){return p.on}).map(function(p){return p.name})}
+function esc(s){return s.replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+
+function addNames(){
+  var v=$('name').value.split(/[,，、\s]+/).map(function(s){return s.trim()}).filter(Boolean);
+  v.forEach(function(n){if(!S.players.some(function(p){return p.name===n})){S.players.push({name:n,on:true});G[n]=G[n]||0}});
+  $('name').value='';save();render();$('name').focus();
+}
+function maxCourts(){return Math.max(1,Math.floor(active().length/4))}
+
+function shuffle(a){a=a.slice();for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=a[i];a[i]=a[j];a[j]=t}return a}
+
+function nextRound(){
+  var act=active();
+  if(act.length<4){alert('至少要 4 個人才能排雙打');return}
+  var nc=Math.min(S.courts,Math.floor(act.length/4));
+  var need=nc*4;
+  // priority: fewest games, then longest rest, then random
+  var order=shuffle(act).sort(function(a,b){
+    var ga=G[a]||0,gb=G[b]||0;if(ga!==gb)return ga-gb;
+    return (LAST[a]||0)-(LAST[b]||0);
+  });
+  var play=order.slice(0,need),rest=order.slice(need);
+  // search for best grouping
+  var best=null,bestScore=1e9;
+  for(var t=0;t<300;t++){
+    var sh=shuffle(play),score=0,groups=[];
+    for(var c=0;c<nc;c++){
+      var g=sh.slice(c*4,c*4+4);
+      var a=[g[0],g[1]],b=[g[2],g[3]];
+      score+=3*(PART[key(a[0],a[1])]||0)+3*(PART[key(b[0],b[1])]||0);
+      a.forEach(function(x){b.forEach(function(y){score+=(OPP[key(x,y)]||0)})});
+      groups.push({a:a,b:b});
+    }
+    if(score<bestScore){bestScore=score;best=groups}
+  }
+  best.forEach(function(m){
+    PART[key(m.a[0],m.a[1])]=(PART[key(m.a[0],m.a[1])]||0)+1;
+    PART[key(m.b[0],m.b[1])]=(PART[key(m.b[0],m.b[1])]||0)+1;
+    m.a.forEach(function(x){m.b.forEach(function(y){OPP[key(x,y)]=(OPP[key(x,y)]||0)+1})});
+  });
+  S.round++;
+  play.forEach(function(p){G[p]=(G[p]||0)+1;LAST[p]=S.round});
+  S.history.push({r:S.round,m:best,rest:rest});
+  render();
+}
+
+function resetAll(){
+  if(S.history.length&&!confirm('要清除目前的排點紀錄嗎？名單會保留。'))return;
+  S.round=0;S.history=[];G={};LAST={};PART={};OPP={};
+  S.players.forEach(function(p){G[p.name]=0});render();
+}
+
+function render(){
+  var act=active();
+  $('cnt').textContent=S.players.length;
+  $('chips').innerHTML=S.players.map(function(p,i){
+    return '<span class="chip'+(p.on?'':' off')+'"><span>'+esc(p.name)+'</span>'+
+    '<button data-t="'+i+'" title="暫時休息／回來">'+(p.on?'休息':'回來')+'</button>'+
+    '<button data-d="'+i+'" aria-label="刪除 '+esc(p.name)+'">✕</button></span>';
+  }).join('');
+  $('hint').textContent=S.players.length?'':'先加入至少 4 個人。';
+  if(S.courts>maxCourts()&&act.length>=4){}
+  $('courts').textContent=S.courts;
+  $('courtNote').textContent=act.length>=4?'目前人數最多可開 '+Math.floor(act.length/4)+' 場':'';
+  var last=S.history[S.history.length-1];
+  $('roundTitle').textContent=last?'第 '+last.r+' 輪':'尚未開始';
+  $('current').innerHTML=last?last.m.map(function(m,i){
+    return '<div class="court"><h3>場地 '+(i+1)+'</h3><div class="match"><div class="team a">'+esc(m.a[0])+'<br>'+esc(m.a[1])+'</div><div class="vs">對</div><div class="team b">'+esc(m.b[0])+'<br>'+esc(m.b[1])+'</div></div></div>';
+  }).join('')+'<p class="rest">休息：'+(last.rest.length?'<b>'+last.rest.map(esc).join('、')+'</b>':'沒有人')+'</p>':'<p class="empty">按「下一輪」開始排點。</p>';
+  var names=S.players.map(function(p){return p.name});
+  $('stats').innerHTML='<tr><th>名字</th><th>上場次數</th></tr>'+names.map(function(n){return '<tr><td>'+esc(n)+'</td><td>'+(G[n]||0)+'</td></tr>'}).join('');
+  $('history').innerHTML=S.history.slice(0,-1).reverse().map(function(h){
+    return '<div class="hist">第 '+h.r+' 輪：'+h.m.map(function(m){return esc(m.a.join('+'))+' 對 '+esc(m.b.join('+'))}).join('；')+(h.rest.length?'（休息：'+h.rest.map(esc).join('、')+'）':'')+'</div>';
+  }).join('');
+}
+
+$('add').onclick=addNames;
+$('name').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();addNames()}});
+$('chips').addEventListener('click',function(e){
+  var t=e.target.getAttribute('data-t'),d=e.target.getAttribute('data-d');
+  if(t!==null){S.players[t].on=!S.players[t].on}
+  else if(d!==null){S.players.splice(d,1)}
+  else return;
+  save();render();
+});
+$('plus').onclick=function(){S.courts=Math.min(10,S.courts+1);save();render()};
+$('minus').onclick=function(){S.courts=Math.max(1,S.courts-1);save();render()};
+$('next').onclick=nextRound;
+$('reset').onclick=resetAll;
+load();S.players.forEach(function(p){G[p.name]=0});render();
+</script>
+</body>
+</html>
